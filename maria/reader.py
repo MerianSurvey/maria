@@ -12,7 +12,8 @@ def read_summary_catalog ( dr=1, path=None ):
 
     Parameters:
         dr (int, optional): Data release number (default is 1).
-        path (str, optional): Path to the summary catalog FITS file. If not provided, the path will be determined based on the data release number.
+        path (str, optional): Path to the summary catalog FITS file. 
+        If not provided, the path will be determined based on the data release number.
 
     Returns:
         astropy.io.fits.fitsrec.FITS_rec: The summary catalog data loaded from the FITS file.
@@ -35,7 +36,8 @@ def read_tract_catalog (tractnumber, dr=1, path=None):
     Parameters:
         tractnumber (int): The tract number for the catalog.
         dr (int, optional): Data release number (default is 1).
-        path (str, optional): Path to the tract catalog FITS file template. If not provided, the path will be determined based on the data release number.
+        path (str, optional): Path to the tract catalog FITS file template. 
+        If not provided, the path will be determined based on the data release number.
 
     Returns:
         numpy.ndarray: The tract catalog data loaded from the FITS file.
