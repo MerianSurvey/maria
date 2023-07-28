@@ -33,6 +33,22 @@ def read_summary_catalog ( dr=1, path=None ):
     return cat
 
 def make_qualitymask ( catalog, code ):
+    """
+    Generate a quality mask for the catalog based on the provided code.
+
+    Parameters:
+        catalog (pandas.DataFrame): The catalog containing the data to be masked.
+        code (str or array-like): Code used to create the mask.
+
+    Returns:
+        numpy.ndarray: A boolean mask representing the quality of the data.
+
+    Note:
+        - For 'use' code, the mask will be True for entries where 'SciUse' column equals 1.
+        - For 'n708_detect' code, the mask will be True for entries where 'SciUse' column equals 1 and 
+          'N708_gaap1p0Flux_Merian' is present, and the SNR of the N708 GaAP photometry is greater than 3.
+        - For other codes, the mask will be created based on the provided code (TODO: more flexibility will be added in the future).
+    """    
     if code == 'use':
         mask = catalog['SciUse'] == 1
     elif code == 'n708_detect':
@@ -76,6 +92,24 @@ def read_tract_catalog (tractnumber, dr=1, path=None, usecode='use'):
 def assemble_catalog ( colnames, dr=1, path=None, usecode='use', verbose=False,
                        usescratch=True,
                        scratchdir='./scratch/'):
+    """
+    Assemble a catalog by concatenating data from multiple tracts.
+
+    Parameters:
+        colnames (list): List of column names to be included in the assembled catalog.
+        dr (int, optional): Data release number (default is 1).
+        path (str, optional): Path to the tract catalog FITS file template. 
+            If not provided, the path will be determined based on the data release number.
+        usecode (str, optional): Code used to identify the tract catalog files (default is 'use').
+        verbose (bool, optional): Whether to display verbose information (default is False).
+        usescratch (bool, optional): Whether to use a scratch directory for caching assembled catalogs (default is True).
+            * Note: the scratch filename is set by default as DR{dr}_{usecode}.csv TODO: expand flexibility
+        scratchdir (str, optional): Directory path for storing cached catalogs (default is './scratch/').
+    Returns:
+        pandas.DataFrame: The assembled catalog containing data from all the specified tracts.
+    Raises:
+        KeyError: If the specified data release number is not recognized.
+    """    
     if path is  None:        
         if dr not in _TRACT_CATALOG_PATHS.keys():
             raise KeyError (f"Data release {dr} not recognized!")
