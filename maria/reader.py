@@ -244,3 +244,86 @@ def assemble_catalog_from_coordinates(coord_list, match_dist=.1*u.arcsec,
         catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}_fromcoord.csv')
 
     return (catalog, coord_matched, dist_CtoM)
+
+
+def assemble_catalog_conesearch(coord_center, seplimit=1*u.arcmin, 
+                                colnames=None, usecode = "use", verbose = False,
+                                dr=1, path=None, 
+                                usescratch=True,
+                                scratchdir='./scratch/'):  
+
+
+    """
+    Assemble a catalog by matching with a list of provided coordinates.
+
+    Parameters:
+        coord_center (list): Coordinates of cone center (ra, dec)
+        seplimit (float or astropy.quantity): Upper limit on separation from center - i.e. cone radius.
+            If not an astropy quanitity, assumed to be in arcseconds
+        colnames (list, optional): List of column names to be included in the assembled catalog. 
+            If None, all columns will be included.
+        dr (int, optional): Data release number (default is 1).
+        path (str, optional): Path to the tract catalog FITS file template. 
+            If not provided, the path will be determined based on the data release number.
+        usecode (str, optional): Code used to identify the tract catalog files (default is 'use').
+        verbose (bool, optional): Whether to display verbose information (default is False).
+        usescratch (bool, optional): Whether to use a scratch directory for caching assembled catalogs (default is True).
+            * Note: the scratch filename is set by default as DR{dr}_{usecode}_fromcoord.csv TODO: expand flexibility
+        scratchdir (str, optional): Directory path for storing cached catalogs (default is './scratch/').
+    Returns:
+        pandas.DataFrame: The assembled catalog containing data from within the specified cone. 
+    Raises:
+        KeyError: If the specified data release number is not recognized.
+    """    
+
+    # if no columns specified, use all columns
+    if colnames is None:
+        colnames = read_tract_catalog (9945, usecode=usecode, dr=dr, path=path).columns #9945 is small
+        colnames = [x.name for x in colnames]
+
+    if not type(seplimit) is u.quantity.Quantity:
+        seplimit = seplimit * u.arcsec
+
+    # read in the summary catalog to cross match
+    sumcat = read_summary_catalog(dr=dr, path=path)
+
+    # cross match
+    if verbose:
+        print ("Performing cone search")
+    ra, dec = coord_center
+    _coords = SkyCoord(ra, dec, unit='deg')
+    _sum = SkyCoord(sumcat['coord_ra_Merian'], sumcat['coord_dec_Merian'], unit='deg')
+    sep_dist = _sum.separation(_coords)
+    close_ind = sep_dist < seplimit
+
+    # matched rows of summary catalog
+    matched_sum = sumcat[close_ind]
+    tracts = np.unique(matched_sum["tract"])
+
+    # make full catalog
+    catalog = pd.DataFrame(index = matched_sum["objectId_Merian"], columns=colnames)
+    if verbose:
+        print (f"Compiling catalog for {len(matched_sum)} sources from {len(tracts)} tracts")
+        start = time.time ()   
+    for i, tract in enumerate(tracts):
+        # read in tract with quality mask
+        tract_cat = read_tract_catalog (tract, usecode=usecode, dr=dr, path=path)
+
+        # get ids of matched sources in the tract
+        tract_ids = matched_sum[matched_sum["tract"] == tract]['objectId_Merian']
+
+        # find indices of those sources in the tract catalog
+        tract_match_ind = [np.where(tract_cat['objectId_Merian'] == id)[0][0] for id in tract_ids]
+
+        # save info to table
+        for col in colnames:
+            catalog.loc[tract_ids, col] = tract_cat[tract_match_ind][col]
+
+        if verbose and (i%50)==0:
+            elapsed = time.time () - start
+            print(f"Processed {i}/{len(tracts)} tracts after {elapsed:.2f} sec")
+
+    if usescratch:
+        catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}_conesearch.csv')
+
+    return (catalog)
