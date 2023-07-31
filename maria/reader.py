@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from astropy import table
 from astropy.io import fits
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 
 _SUMMARY_CATALOG_PATHS = {1 : "/scratch/gpfs/sd8758/merian/catalog/S20A/meriandr1_master_catalog.fits"}
 _TRACT_CATALOG_PATHS = {1 : "/scratch/gpfs/sd8758/merian/catalog/S20A/$TRACTNUM/meriandr1_use_$TRACTNUM_S20A.fits"}
@@ -157,3 +159,88 @@ def assemble_catalog ( colnames, dr=1, path=None, usecode='use', verbose=False,
         catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}.csv')
     return catalog
 
+def assemble_catalog_from_coordinates(coord_list, match_dist=.1*u.arcsec, 
+                                      colnames=None, usecode = "use", verbose = False,
+                                      dr=1, path=None, 
+                                      usescratch=True,
+                                      scratchdir='./scratch/'):  
+
+
+    """
+    Assemble a catalog by matching with a list of provided coordinates.
+
+    Parameters:
+        coord_list (2d list): List of coordinates to find merian matches for. Formatted (ra, dec)
+        match_dist (float or astropy quantity): Upper limit for crossmatching distance. 
+            If not an astropy quanitity, assumed to be in arcseconds
+        colnames (list, optional): List of column names to be included in the assembled catalog. 
+            If None, all columns will be included.
+        dr (int, optional): Data release number (default is 1).
+        path (str, optional): Path to the tract catalog FITS file template. 
+            If not provided, the path will be determined based on the data release number.
+        usecode (str, optional): Code used to identify the tract catalog files (default is 'use').
+        verbose (bool, optional): Whether to display verbose information (default is False).
+        usescratch (bool, optional): Whether to use a scratch directory for caching assembled catalogs (default is True).
+            * Note: the scratch filename is set by default as DR{dr}_{usecode}_fromcoord.csv TODO: expand flexibility
+        scratchdir (str, optional): Directory path for storing cached catalogs (default is './scratch/').
+    Returns:
+        pandas.DataFrame: The assembled catalog containing data from all the specified tracts.
+        numpy.ndarray: An array of boolean values indicating whether the provided coordinate was matched to a Merian source.
+        numpy.ndarray: An array of match distance to closest match for all provided coordinates. 
+    Raises:
+        KeyError: If the specified data release number is not recognized.
+    """    
+
+    # if no columns specified, use all columns
+    if colnames is None:
+        colnames = read_tract_catalog (9945, usecode=usecode, dr=dr, path=path).columns #9945 is small
+        colnames = [x.name for x in colnames]
+
+    if not type(match_dist) is u.quantity.Quantity:
+        match_dist = match_dist * u.arcsec
+
+    # read in the summary catalog to cross match
+    sumcat = read_summary_catalog(dr=dr, path=path)
+
+    # cross match
+    if verbose:
+        print ("Matching supplied coordinates with master catalog")
+
+    ra, dec = coord_list
+    _coords = SkyCoord(ra, dec, unit='deg')
+    _sum = SkyCoord(sumcat['coord_ra_Merian'], sumcat['coord_dec_Merian'], unit='deg')
+    ind_CtoM, dist_CtoM, _ = _coords.match_to_catalog_sky(_sum)
+
+    # matched rows of summary catalog
+    matched_sum = sumcat[ind_CtoM[dist_CtoM <= match_dist]]
+    tracts = np.unique(matched_sum["tract"])
+    # save a list of which coordinates didn't have merian matches
+    coord_matched = dist_CtoM <= match_dist
+
+    # make full catalog
+    catalog = pd.DataFrame(index = matched_sum["objectId_Merian"], columns=colnames)
+    if verbose:
+        print (f"Compiling catalog for {len(matched_sum)} sources from {len(tracts)} tracts")
+        start = time.time ()   
+    for i, tract in enumerate(tracts):
+        # read in tract with quality mask
+        tract_cat = read_tract_catalog (tract, usecode=usecode, dr=dr, path=path)
+
+        # get ids of matched sources in the tract
+        tract_ids = matched_sum[matched_sum["tract"] == tract]['objectId_Merian']
+
+        # find indices of those sources in the tract catalog
+        tract_match_ind = [np.where(tract_cat['objectId_Merian'] == id)[0][0] for id in tract_ids]
+
+        # save info to table
+        for col in colnames:
+            catalog.loc[tract_ids, col] = tract_cat[tract_match_ind][col]
+
+        if verbose and (i%50)==0:
+            elapsed = time.time () - start
+            print(f"Processed {i}/{len(tracts)} tracts after {elapsed:.2f} sec")
+
+    if usescratch:
+        catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}_fromcoord.csv')
+
+    return (catalog, coord_matched, dist_CtoM)
