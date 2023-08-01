@@ -122,6 +122,7 @@ def assemble_catalog ( colnames, dr=1, path=None, usecode='use', verbose=False,
             catalog = pd.read_csv ( scratchfile, index_col=0 )
             if verbose:
                 print(f'Warning: reading from scratch {scratchfile}')
+            return catalog
             
         
     available_tracts = [ os.path.basename(x[:-1]) for x in glob.glob(path.split("$TRACTNUM")[0] + '/*/') ]
