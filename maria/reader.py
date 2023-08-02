@@ -1,6 +1,7 @@
 import os
 import time
 import glob
+import socket
 import numpy as np
 import pandas as pd
 from astropy import table
@@ -8,10 +9,17 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 
-_SUMMARY_CATALOG_PATHS = {1 : "/scratch/gpfs/sd8758/merian/catalog/S20A/meriandr1_master_catalog.fits"}
-_TRACT_CATALOG_PATHS = {1 : "/scratch/gpfs/sd8758/merian/catalog/S20A/$TRACTNUM/meriandr1_use_$TRACTNUM_S20A.fits"}
+# \\ set directory based on HOSTNAME
+hostname = socket.gethostname()
+if hostname == 'tigressdata2.princeton.edu':
+    prefix = '/tiger/scratch/'
+elif hostname == 'tiger2-sumire.princeton.edu':
+    prefix = '/scratch/'
 
-def read_summary_catalog ( dr=1, path=None ):
+_SUMMARY_CATALOG_PATHS = {1 : f"{prefix}gpfs/sd8758/merian/catalog/S20A/meriandr1_master_catalog.fits"}
+_TRACT_CATALOG_PATHS = {1 : f"{prefix}gpfs/sd8758/merian/catalog/S20A/$TRACTNUM/meriandr1_use_$TRACTNUM_S20A.fits"}
+
+def read_summary_catalog ( dr=1, path=None, return_dataframe=True ):
     """
     Read the summary catalog data for a specified data release.
 
@@ -31,10 +39,15 @@ def read_summary_catalog ( dr=1, path=None ):
             raise KeyError (f"Data release {dr} not recognized!")
         path = _SUMMARY_CATALOG_PATHS[dr]
     
-    cat = fits.getdata ( path, 1 )
-    return cat
+    cat = table.Table(fits.getdata ( path, 1 ))
+    
+    if return_dataframe:
+        return cat.to_pandas ().set_index('objectId_Merian')
+    else:
+        cat.add_index('objectId_Merian')
+        return cat
 
-def make_qualitymask ( catalog, code ):
+def make_qualitymask ( catalog, code, **kwargs ):
     """
     Generate a quality mask for the catalog based on the provided code.
 
@@ -53,6 +66,19 @@ def make_qualitymask ( catalog, code ):
     """    
     if code == 'use':
         mask = catalog['SciUse'] == 1
+    elif code == 'rmagcut':
+        mask = catalog['SciUse'] == 1
+        positive_rflux = catalog['r_cModelFlux_Merian']>0
+        rflux = np.where ( positive_rflux,
+                          catalog['r_cModelFlux_Merian'],
+                          np.NaN)
+        rmag = -2.5 * np.log10(rflux) + 31. # XXX IS THIS THE RIGHT ZP?
+        if 'rmaglim' in kwargs.keys():
+            rmaglim = kwargs['rmaglim']
+        else:
+            rmaglim = 23.
+            
+        mask &= rmag < rmaglim
     elif code == 'n708_detect':
         mask = catalog['SciUse'] == 1
         if 'N708_gaap1p0Flux_Merian' not in catalog.columns.names:
@@ -156,8 +182,8 @@ def assemble_catalog ( colnames, dr=1, path=None, usecode='use', verbose=False,
             print(f"Processed {i}/{len(available_tracts)} tracts after {elapsed:.2f} sec")
     catalog = pd.concat(dataframes)
     
-    if usescratch:
-        catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}.csv')
+    #if usescratch:
+    catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}.csv')
     return catalog
 
 def assemble_catalog_from_coordinates(coord_list, match_dist=.1*u.arcsec, 
