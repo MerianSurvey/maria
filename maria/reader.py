@@ -85,6 +85,10 @@ def make_qualitymask ( catalog, code, **kwargs ):
             mask = np.zeros_like(mask, dtype=bool)
         else:
             mask &= (catalog['N708_gaap1p0Flux_Merian']/catalog['N708_gaap1p0FluxErr_Merian']) > 3.
+    elif code == "sdss_bright":
+        # mask to get smaller catalog to match to SDSS
+        mask = catalog["r_gaap1p0Flux_Merian"] > 3630 # in nJy --> rmag = 22.5
+
     else:
         mask = code # TODO: allow for more flexibility, need to come back to this
     return mask
@@ -255,12 +259,14 @@ def assemble_catalog_from_coordinates(coord_list, match_dist=.1*u.arcsec,
 
         # get ids of matched sources in the tract
         tract_ids = matched_sum[matched_sum["tract"] == tract]['objectId_Merian']
+        # some sources might have been filtered due ot the quality mask, so weed those out as well
+        tract_ids = [id for id in tract_ids if id in tract_cat['objectId_Merian']]
 
         # find indices of those sources in the tract catalog
         tract_match_ind = [np.where(tract_cat['objectId_Merian'] == id)[0][0] for id in tract_ids]
 
         # save info to table
-        for col in colnames:
+        for col in np.intersect1d(colnames, [x.name for x in tract_cat.columns]):
             catalog.loc[tract_ids, col] = tract_cat[tract_match_ind][col]
 
         if verbose and (i%50)==0:
@@ -271,8 +277,7 @@ def assemble_catalog_from_coordinates(coord_list, match_dist=.1*u.arcsec,
         catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}_fromcoord.csv')
 
     return (catalog, coord_matched, dist_CtoM)
-
-
+    
 def assemble_catalog_conesearch(coord_center, seplimit=1*u.arcmin, 
                                 colnames=None, usecode = "use", verbose = False,
                                 dr=1, path=None, 
