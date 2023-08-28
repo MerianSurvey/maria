@@ -13,10 +13,10 @@ import astropy.units as u
 hostname = socket.gethostname()
 if hostname == 'tigressdata2.princeton.edu':
     prefix = '/tiger/scratch/'
-elif hostname == 'tiger2-sumire.princeton.edu':
+elif (hostname == 'tiger2-sumire.princeton.edu') | (hostname == 'tigercpu.princeton.edu'):
     prefix = '/scratch/'
 
-_SUMMARY_CATALOG_PATHS = {1 : f"{prefix}gpfs/sd8758/merian/catalog/S20A/meriandr1_master_catalog.fits"}
+_SUMMARY_CATALOG_PATHS = {1 : f"{prefix}gpfs/sd8758/merian/catalog/S20A/meriandr1_summary_catalog.fits"}
 _TRACT_CATALOG_PATHS = {1 : f"{prefix}gpfs/sd8758/merian/catalog/S20A/$TRACTNUM/meriandr1_use_$TRACTNUM_S20A.fits"}
 
 def read_summary_catalog ( dr=1, path=None, return_dataframe=True ):
@@ -72,7 +72,7 @@ def make_qualitymask ( catalog, code, **kwargs ):
         rflux = np.where ( positive_rflux,
                           catalog['r_cModelFlux_Merian'],
                           np.NaN)
-        rmag = -2.5 * np.log10(rflux) + 31. # XXX IS THIS THE RIGHT ZP?
+        rmag = -2.5 * np.log10(rflux) + 31.4 # XXX IS THIS THE RIGHT ZP?
         if 'rmaglim' in kwargs.keys():
             rmaglim = kwargs['rmaglim']
         else:
@@ -88,6 +88,30 @@ def make_qualitymask ( catalog, code, **kwargs ):
     elif code == "sdss_bright":
         # mask to get smaller catalog to match to SDSS
         mask = catalog["r_gaap1p0Flux_Merian"] > 3630 # in nJy --> rmag = 22.5
+    elif code == "betsy_example":
+        # select sources with good quality data 
+        mask = catalog['SciUse'] == 1
+        
+        # select sources with good values in r
+        positive_rflux = (catalog['r_cModelFlux_Merian']>0) & (catalog['r_cModelFluxErr_Merian']>0)
+        rflux = np.where (positive_rflux,
+                          catalog['r_cModelFlux_Merian'],
+                          np.NaN)
+        rfluxerr = np.where (positive_rflux,
+                          catalog['r_cModelFluxErr_Merian'],
+                          np.NaN)
+
+        # calculate magnitude from flux using zero point
+        rmag = -2.5 * np.log10(rflux) + 31.4
+
+        # select sources brighter than a given magnitude value
+        rmaglim = 23
+        mask &= rmag < rmaglim
+
+        # we can also do a SNR cut if we want
+        SNR_r = rflux/rfluxerr
+        SNRlim = 3
+        mask &= SNR_r > SNRlim
 
     else:
         mask = code # TODO: allow for more flexibility, need to come back to this
