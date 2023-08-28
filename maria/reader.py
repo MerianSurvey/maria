@@ -105,7 +105,7 @@ def make_qualitymask ( catalog, code, **kwargs ):
         rmag = -2.5 * np.log10(rflux) + 31.4
 
         # select sources brighter than a given magnitude value
-        rmaglim = 23
+        rmaglim = 21
         mask &= rmag < rmaglim
 
         # we can also do a SNR cut if we want
@@ -210,8 +210,8 @@ def assemble_catalog ( colnames, dr=1, path=None, usecode='use', verbose=False,
             print(f"Processed {i}/{len(available_tracts)} tracts after {elapsed:.2f} sec")
     catalog = pd.concat(dataframes)
     
-    #if usescratch:
-    catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}.csv')
+    if usescratch:
+        catalog.to_csv ( f'{scratchdir}/DR{dr}_{usecode}.csv')
     return catalog
 
 def assemble_catalog_from_coordinates(coord_list, match_dist=.1*u.arcsec, 
